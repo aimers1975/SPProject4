@@ -37,6 +37,9 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
+/* Load average - average number of threads run in the last minute */
+int32_t load_avg;
+
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -98,6 +101,7 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
+  load_avg = 0;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -182,6 +186,9 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
+  t->remain_timesl = 4;
+  t->nice_val = 0;
+  t->recent_cpu = 0;
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -346,18 +353,24 @@ thread_get_priority (void)
 }
 
 /* Sets the current thread's nice value to NICE. */
+/* Sets the current thread's nice value to new_nice and recalculates the 
+thread's priority based on the new value (see section B.2 Calculating Priority). 
+If the running thread no longer has the highest priority, yields. */
 void
 thread_set_nice (int nice UNUSED) 
 {
-  /* Not yet implemented. */
+  struct thread *t = current_thread();
+  t->nice_val = nice;
+  t->priority = PRI_MAX - (t->recent_cpu / 4) - (t->nice_val * 2);
+  
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  struct thread *t = current_thread();
+  return t->nice_val;
 }
 
 /* Returns 100 times the system load average. */
@@ -372,8 +385,8 @@ thread_get_load_avg (void)
 int
 thread_get_recent_cpu (void) 
 {
-  /* Not yet implemented. */
-  return 0;
+  struct thread *t = current_thread();
+  return 100 * t->recent_cpu;
 }
 
 /* Idle thread.  Executes when no other thread is ready to run.

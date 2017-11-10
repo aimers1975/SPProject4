@@ -99,7 +99,9 @@ struct thread
 #endif
     /* Owned by timer.c  */
     int64_t waketime;   /* Time to wake up*/
-
+    int64_t remain_timesl;
+    int32_t nice_val;
+    int32_t recent_cpu;
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };
