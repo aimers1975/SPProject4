@@ -11,6 +11,7 @@
 #include "threads/switch.h"
 #include "threads/synch.h"
 #include "threads/vaddr.h"
+#include "threads/fixed_point.h"
 #ifdef USERPROG
 #include "userprog/process.h"
 #endif
@@ -37,9 +38,6 @@ static struct thread *initial_thread;
 /* Lock used by allocate_tid(). */
 static struct lock tid_lock;
 
-/* Load average - average number of threads run in the last minute */
-int32_t load_avg;
-
 /* Stack frame for kernel_thread(). */
 struct kernel_thread_frame 
   {
@@ -61,6 +59,8 @@ static unsigned thread_ticks;   /* # of timer ticks since last yield. */
    If true, use multi-level feedback queue scheduler.
    Controlled by kernel command-line option "-o mlfqs". */
 bool thread_mlfqs;
+/* Load average - average number of threads run in the last minute */
+fixed_t load_avg;
 
 static void kernel_thread (thread_func *, void *aux);
 
@@ -101,7 +101,6 @@ thread_init (void)
   init_thread (initial_thread, "main", PRI_DEFAULT);
   initial_thread->status = THREAD_RUNNING;
   initial_thread->tid = allocate_tid ();
-  load_avg = 0;
 }
 
 /* Starts preemptive thread scheduling by enabling interrupts.
@@ -113,6 +112,9 @@ thread_start (void)
   struct semaphore idle_started;
   sema_init (&idle_started, 0);
   thread_create ("idle", PRI_MIN, idle, &idle_started);
+
+  /* Initialize load_avg */
+  load_avg = FP_CONST (0);
 
   /* Start preemptive thread scheduling. */
   intr_enable ();
@@ -186,9 +188,6 @@ thread_create (const char *name, int priority,
   /* Initialize thread. */
   init_thread (t, name, priority);
   tid = t->tid = allocate_tid ();
-  t->remain_timesl = 4;
-  t->nice_val = 0;
-  t->recent_cpu = 0;
 
   /* Stack frame for kernel_thread(). */
   kf = alloc_frame (t, sizeof *kf);
@@ -207,6 +206,9 @@ thread_create (const char *name, int priority,
 
   /* Add to run queue. */
   thread_unblock (t);
+  
+  /* thread_test_preemption */
+  thread_test_preemption();
 
   return tid;
 }
@@ -342,6 +344,8 @@ thread_foreach (thread_action_func *func, void *aux)
 void
 thread_set_priority (int new_priority) 
 {
+  if (thread_mlfqs)
+      return;
   thread_current ()->priority = new_priority;
 }
 
@@ -352,24 +356,35 @@ thread_get_priority (void)
   return thread_current ()->priority;
 }
 
+/* Test if current thread should be preempted */
+void thread_test_preemption(void)
+{
+  enum intr_level old_level = intr_disable();
+  
+  if(!list_empty (&ready_list) && thread_current()->priority <
+      list_entry (list_front (&ready_list), struct thread, elem)->priority)
+  {
+    thread_yield();
+  }
+ 
+  intr_set_level(old_level);
+}
 /* Sets the current thread's nice value to NICE. */
-/* Sets the current thread's nice value to new_nice and recalculates the 
-thread's priority based on the new value (see section B.2 Calculating Priority). 
-If the running thread no longer has the highest priority, yields. */
 void
 thread_set_nice (int nice UNUSED) 
 {
-  struct thread *t = current_thread();
+  struct thread *t = thread_current();
   t->nice_val = nice;
-  t->priority = PRI_MAX - (t->recent_cpu / 4) - (t->nice_val * 2);
-  
+  thread_mlfqs_update_priority (t);
+  thread_test_preemption(); 
+//  t->priority = PRI_MAX - (t->recent_cpu / 4) - (t->nice_val * 2);
 }
 
 /* Returns the current thread's nice value. */
 int
 thread_get_nice (void) 
 {
-  struct thread *t = current_thread();
+  struct thread *t = thread_current();
   return t->nice_val;
 }
 
@@ -378,16 +393,85 @@ int
 thread_get_load_avg (void) 
 {
   /* Not yet implemented. */
-  return 0;
+  return FP_ROUND (FP_MULT_MIX(load_avg, 100));
 }
 
 /* Returns 100 times the current thread's recent_cpu value. */
 int
 thread_get_recent_cpu (void) 
 {
-  struct thread *t = current_thread();
-  return 100 * t->recent_cpu;
+ // struct thread *t = thread_current();
+ // return 100 * t->recent_cpu;
+  return FP_ROUND (FP_MULT_MIX (thread_current()->recent_cpu, 100));
 }
+
+/* Increase current thread's recent_cpu by 1 */
+void thread_mlfqs_incr_recent_cpu(void) 
+{
+  ASSERT (thread_mlfqs);
+  ASSERT (intr_context());
+
+  struct thread *t = thread_current();
+  if (t == idle_thread)
+     return;
+  t->recent_cpu = FP_ADD_MIX (t->recent_cpu, 1);
+}
+
+void thread_mlfqs_calc_recent_cpu(struct thread *t)
+{
+  ASSERT (thread_mlfqs);
+  ASSERT (t != idle_thread);
+
+  fixed_t coef = FP_DIV (FP_MULT_MIX (load_avg, 2),
+                 FP_ADD_MIX (FP_MULT_MIX (load_avg, 2), 1));
+  fixed_t term = FP_MULT (coef, t->recent_cpu);
+  t->recent_cpu = FP_ADD_MIX (term, t->nice_val);
+}
+/* Update thread's priority */
+void thread_mlfqs_update_priority(struct thread *t)
+{
+  if (t == idle_thread)
+     return;
+  ASSERT (thread_mlfqs);
+  ASSERT (t != idle_thread);
+  
+  fixed_t new_priority = FP_CONST (PRI_MAX);
+  new_priority = FP_SUB (new_priority, FP_DIV_MIX (t->recent_cpu, 4));
+  new_priority = FP_SUB_MIX (new_priority, 2 * t->nice_val);
+  t->priority = FP_INT_PART (new_priority);
+  if (t->priority < PRI_MIN)
+     t->priority = PRI_MIN;
+  else if (t->priority > PRI_MAX)
+     t->priority = PRI_MAX;
+}
+/* Invoke once per second to refresh load_avg and recent_cpu of all threads */
+void thread_mlfqs_refresh(void)
+{
+  ASSERT (thread_mlfqs);
+  ASSERT (intr_context());
+  
+  /* calculate load per second */
+  size_t ready_threads = list_size(&ready_list);
+  if(thread_current != idle_thread)
+     ready_threads++;
+  
+  load_avg = FP_ADD (FP_DIV_MIX (FP_MULT_MIX (load_avg, 59), 60),
+                     FP_DIV_MIX (FP_CONST (ready_threads), 60));
+
+  /* recent_cpu is recalculated for every thread per second */
+  struct thread *t;
+  struct list_elem *e = list_begin (&all_list);
+  for(; e != list_end (&all_list); e = list_next (e))
+  {
+     t = list_entry(e, struct thread, allelem);
+     if(t != idle_thread) 
+     {  
+        thread_mlfqs_calc_recent_cpu(t);
+        thread_mlfqs_update_priority(t);
+     }
+  } 
+}
+
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -476,6 +560,8 @@ init_thread (struct thread *t, const char *name, int priority)
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
   t->magic = THREAD_MAGIC;
+  t->nice_val = 0;
+  t->recent_cpu = FP_CONST(0);
 
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);

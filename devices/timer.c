@@ -34,47 +34,6 @@ static void busy_wait (int64_t loops);
 static void real_time_sleep (int64_t num, int32_t denom);
 static void real_time_delay (int64_t num, int32_t denom);
 
-/* THERE MAY BE A BETTER PLACE FOR THIS!!!
-priority, nice, and ready_threads are integers, 
-but recent_cpu and load_avg are real numbers
-The following table summarizes how fixed-point arithmetic operations 
-can be implemented in C. In the table, 
-
-x and y are fixed-point numbers, 
-n is an integer, 
-fixed-point numbers are in signed p.q format where p + q = 31, 
-and f is 1 << q:
-
-Convert n to fixed point: 	n * f
-Convert x to integer (rounding toward zero): 	x / f
-Convert x to integer (rounding to nearest): 	(x + f / 2) / f if x >= 0,
-(x - f / 2) / f if x <= 0.
-
-Add x and n: 	x + n * f
-Subtract n from x: 	x - n * f
-Multiply x by y: 	((int64_t) x) * y / f
-Multiply x by n: 	x * n
-Divide x by y: 	((int64_t) x) * f / y
-Divide x by n: 	x / n */
-
-//Inputs are 64 bits althought numbers are 32 bits
-//in 17.14 fixed-point number representation
-int64_t fixed_add(int64_t x, int64_t fix_n) {
-    
-    return x + (fix_n * (1 << 14));
-}
-
-int64_t fixed_subtract(int64_t x, int64_t fix_n) {
-    return x - (fix_n * (1 << 14));
-}
-
-int64_t fixed_mult(int64_t x, int64_t y) {
-
-}
-
-int64_t fixed_divide(int64_t x, int64_t y) {
-
-}
 /* Sets up the timer to interrupt TIMER_FREQ times per second,
    and registers the corresponding interrupt. */
 void
@@ -147,6 +106,9 @@ timer_sleep (int64_t ticks)
   ASSERT (intr_get_level () == INTR_ON);
   /*while (timer_elapsed (start) < ticks) 
     thread_yield ();*/
+  if (ticks <= 0)
+    return;
+
   enum intr_level old_level = intr_disable ();
     struct thread *t = thread_current(); 
     t->waketime = timer_ticks() + ticks;
@@ -233,27 +195,32 @@ timer_interrupt (struct intr_frame *args UNUSED)
 {
   ticks++;
   thread_tick ();
-
+  bool preempt = false;
   int64_t cur;
   cur = timer_ticks();
 
-  /* Increment the value of recent_cpu for the current thread*/
-  struct thread t* = current_thread();
-  if(t != idle_thread) {
-     t->recent_cpu = (2*load_avg)/(2*load_avg + 1) * thread_get_recent_cpu() + t->nice;
+  /* Actions for 4.4BSD Scheduler */
+  if (thread_mlfqs) {
+     thread_mlfqs_incr_recent_cpu();
+     if (ticks % TIMER_FREQ == 0)
+        thread_mlfqs_refresh();
+     else if (ticks % 4 == 0)
+        thread_mlfqs_update_priority(thread_current());
   }
-  
-  
+
   /* Add call here to check if any thread sleeping thread should wake */
   while(!list_empty(&sleep_list)) {
     struct thread *t = list_entry(list_front(&sleep_list), struct thread, elem);
     if(cur >= t->waketime) {
         list_pop_front(&sleep_list);    // Remove from sleep list
         thread_unblock(t);  // Put into ready list
+        preempt = true;
     } else {
         break;
     }
   }
+  if (preempt)
+     intr_yield_on_return();
 }
 
 /* Returns true if LOOPS iterations waits for more than one timer
