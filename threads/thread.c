@@ -246,7 +246,9 @@ thread_unblock (struct thread *t)
 
   old_level = intr_disable ();
   ASSERT (t->status == THREAD_BLOCKED);
-  list_push_back (&ready_list, &t->elem);
+//  list_push_back (&ready_list, &t->elem);
+  list_insert_ordered (&ready_list, &t->elem, 
+                       thread_priority_large, NULL);
   t->status = THREAD_READY;
   intr_set_level (old_level);
 }
@@ -317,7 +319,9 @@ thread_yield (void)
 
   old_level = intr_disable ();
   if (cur != idle_thread) 
-    list_push_back (&ready_list, &cur->elem);
+   // list_push_back (&ready_list, &cur->elem);
+     list_insert_ordered (&ready_list, &cur->elem, 
+                          thread_priority_large, NULL);
   cur->status = THREAD_READY;
   schedule ();
   intr_set_level (old_level);
@@ -346,7 +350,18 @@ thread_set_priority (int new_priority)
 {
   if (thread_mlfqs)
       return;
-  thread_current ()->priority = new_priority;
+  struct thread *t = thread_current();
+  int old_priority = t->priority;
+
+  /* update base priority */
+  t->base_priority = new_priority;
+  /* update priority and test preemption if new priority
+     is smaller */
+  if (new_priority < old_priority)
+  {
+    t->priority = new_priority;
+    thread_test_preemption();
+  }
 }
 
 /* Returns the current thread's priority. */
@@ -376,7 +391,7 @@ thread_set_nice (int nice UNUSED)
   struct thread *t = thread_current();
   t->nice_val = nice;
   thread_mlfqs_update_priority (t);
-  thread_test_preemption(); 
+  thread_test_preemption();
 //  t->priority = PRI_MAX - (t->recent_cpu / 4) - (t->nice_val * 2);
 }
 
@@ -472,6 +487,14 @@ void thread_mlfqs_refresh(void)
   } 
 }
 
+bool thread_priority_large(const struct list_elem *a,
+                           const struct list_elem *b,
+                           void *aux UNUSED)
+{
+  struct thread *pta = list_entry (a, struct thread, elem);
+  struct thread *ptb = list_entry (b, struct thread, elem);
+  return pta->priority > ptb->priority; 
+}
 
 /* Idle thread.  Executes when no other thread is ready to run.
 
@@ -559,6 +582,7 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
+  t->base_priority = priority;
   t->magic = THREAD_MAGIC;
   t->nice_val = 0;
   t->recent_cpu = FP_CONST(0);
