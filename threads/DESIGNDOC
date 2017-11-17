@@ -57,7 +57,7 @@ and they are sorted by waketime, we know we don't need to search any further.
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
-TODO - I wasn't sure on this one. We disable interrupts so no other occurences can come
+TODO - I wasn't sure on this one. We disable interrupts so no other events can come
 in and interrupt the operations in this function.
  
 >> A5: How are race conditions avoided when a timer interrupt occurs
@@ -71,7 +71,9 @@ We disable interrupts while we are modifying the sleep list.
 >> another design you considered?
 
 This portion of the design was implemented in class with the professor and met all
-of the requirements so we didn't
+of the requirements so we didn't do another design.  But some good decisions around this
+design are to ensure that the list of sleeping threads is sorted, and only check early
+in the list due to this sort to speed up the time to find threads to wake up.
 
 			 PRIORITY SCHEDULING
 			 ===================
@@ -83,12 +85,15 @@ of the requirements so we didn't
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
 thread.h/struct thread
+nice_val - Used in priority calculation. How nice thread is to other threads, positive nice
+   values minimize CPU thread consumes, negative is opposite.
+recent_cpu - Used in priority calculation, calculates how much CPU time a thread has received
+   recently. 
+base_priority - todo
 
-nice_val - value used to calculate - todo
-recent_cpu - value used to calculate - todo
 
 thread.c
-load_avg
+load_avg - Used in recent_cpu calculation.  Average number of threads ready to run over the last minute.
 
 >> B2: Explain the data structure used to track priority donation.
 >> Use ASCII art to diagram a nested donation.  (Alternately, submit a
@@ -124,12 +129,15 @@ pre-empt the current thread.
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
 
-TODO
+Two threads could update their priority simulatneously.  To deal with this, the call to check if a thread
+should pre-empt another thread disables interupts so there can only be one pre-emption at a time.
 
 ---- RATIONALE ----
 
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
+
+Todo -
 
 			  ADVANCED SCHEDULER
 			  ==================
@@ -140,12 +148,16 @@ TODO
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
+Todo
+
 ---- ALGORITHMS ----
 
 >> C2: Suppose threads A, B, and C have nice values 0, 1, and 2.  Each
 >> has a recent_cpu value of 0.  Fill in the table below showing the
 >> scheduling decision and the priority and recent_cpu values for each
 >> thread after each given number of timer ticks:
+
+Todo
 
 timer  recent_cpu    priority   thread
 ticks   A   B   C   A   B   C   to run
@@ -165,8 +177,14 @@ ticks   A   B   C   A   B   C   to run
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
 
+Todo -
+
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
+
+Anytime interrupts are disabled, this will affect performance.  We tried to 
+only disable interrupts around the key critical sections so that the impact to performance
+could be minimized.
 
 ---- RATIONALE ----
 
@@ -175,12 +193,16 @@ ticks   A   B   C   A   B   C   to run
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
 
+Todo
+
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
 >> decide to implement it the way you did?  If you created an
 >> abstraction layer for fixed-point math, that is, an abstract data
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
+
+We created a set of macros for handling the fixed point arithmatic. Todo.
 
 			   SURVEY QUESTIONS
 			   ================
