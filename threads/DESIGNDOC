@@ -1,4 +1,4 @@
-S 140      |
+			| 	S 140        |
 			| PROJECT 1: THREADS |
 			|   DESIGN DOCUMENT  |
 			+--------------------+
@@ -37,7 +37,7 @@ timer.c - list sleep_list - added to keep track of thread waiting for an alarm
 >> A2: Briefly describe what happens in a call to timer_sleep(),
 >> including the effects of the timer interrupt handler.
 
-First interrups are disabled, and we get the current thread and calculate the timer
+First interrupts are disabled, and we get the current thread and calculate the timer
 tick on which it should wake. Then the thread is inserted into the list of 
 sleeping threads according to its waketime, ie. so that is is sorted and easy to
 grab from the beginning of the list.  Then instead of thread_yeild() as was done is the
@@ -57,7 +57,7 @@ and they are sorted by waketime, we know we don't need to search any further.
 >> A4: How are race conditions avoided when multiple threads call
 >> timer_sleep() simultaneously?
 
-TODO - I wasn't sure on this one. We disable interrupts so no other events can come
+We disable interrupts, making reads/writes atomic, so no other events can come
 in and interrupt the operations in this function.
  
 >> A5: How are race conditions avoided when a timer interrupt occurs
@@ -89,8 +89,6 @@ nice_val - Used in priority calculation. How nice thread is to other threads, po
    values minimize CPU thread consumes, negative is opposite.
 recent_cpu - Used in priority calculation, calculates how much CPU time a thread has received
    recently. 
-base_priority - todo
-
 
 thread.c
 load_avg - Used in recent_cpu calculation.  Average number of threads ready to run over the last minute.
@@ -107,7 +105,7 @@ Priority donation was not a requirement for this assignment.
 >> a lock, semaphore, or condition variable wakes up first?
 
 When the wake up for a lock/sema etc. is called...interrupts are disabled and the list of waiters is sorted, 
-then we determine if the current thread also needs to be pre-empted if its priority is lower.
+then the thread priorities gets updated and we determine if the current thread also needs to be pre-empted if its priority is lower. 
 
 
 >> B4: Describe the sequence of events when a call to lock_acquire()
@@ -129,15 +127,17 @@ pre-empt the current thread.
 >> how your implementation avoids it.  Can you use a lock to avoid
 >> this race?
 
-Two threads could update their priority simulatneously.  To deal with this, the call to check if a thread
-should pre-empt another thread disables interupts so there can only be one pre-emption at a time.
+Two threads could update their priority simultaneously.  To deal with this, the call to check if a thread
+should pre-empt another thread disables interuppts so there can only be one pre-emption at a time.
 
 ---- RATIONALE ----
 
 >> B7: Why did you choose this design?  In what ways is it superior to
 >> another design you considered?
 
-Todo -
+Initially, we thought of using the ready queue and search for the thread that has the highest priority. We also thought that we would need a queue for each priority level. 
+
+The final design implementation was then wrapped around and based on the BSD scheduler. There were three key steps that helped in scheduling: sorted list, updating priorities, testing for preemption. Using that mechanism, it became easier to determine the order of the thread to get processed. 
 
 			  ADVANCED SCHEDULER
 			  ==================
@@ -148,7 +148,14 @@ Todo -
 >> `struct' member, global or static variable, `typedef', or
 >> enumeration.  Identify the purpose of each in 25 words or less.
 
-Todo
+thread.h/struct thread
+nice_val - Used in priority calculation. How nice thread is to other threads, positive nice
+   values minimize CPU thread consumes, negative is opposite.
+recent_cpu - Used in priority calculation, calculates how much CPU time a thread has received
+   recently.
+
+thread.c
+load_avg - Used in recent_cpu calculation.  Average number of threads ready to run over the last minute.
 
 ---- ALGORITHMS ----
 
@@ -157,27 +164,27 @@ Todo
 >> scheduling decision and the priority and recent_cpu values for each
 >> thread after each given number of timer ticks:
 
-Todo
 
-timer  recent_cpu    priority   thread
-ticks   A   B   C   A   B   C   to run
------  --  --  --  --  --  --   ------
- 0
- 4
- 8
-12
-16
-20
-24
-28
-32
-36
+timer  recent_cpu    	     priority		thread
+ticks   A   B   C  	 A  	  B     C   	to run
+-----  --  --  --  	--  	  --     --   	------
+ 0	0   0   0   	63.00  	61.00  59.00     A
+ 4	4   0   0	62.00   61.00  59.00     A
+ 8      8   0   0       61.00   61.00  59.00     A 
+12     12   0   0       60.00   61.00  59.00     B  
+16     12   4   0       60.00   60.00  59.00     B
+20     12   8   0       60.00   59.00  59.00     A
+24     16   8   0       59.00   59.00  59.00     A
+28     20   8   0       58.00   59.00  59.00     C
+32     20   8   4       58.00   59.00  58.00     B
+36     20  12   4       58.00   58.00  58.00     B
 
 >> C3: Did any ambiguities in the scheduler specification make values
 >> in the table uncertain?  If so, what rule did you use to resolve
 >> them?  Does this match the behavior of your scheduler?
 
-Todo -
+There was ambiguities on whether to update the recent_cpu before or after updating the priority.
+In this design, we chose to update recent_cpu before updating the priority. 
 
 >> C4: How is the way you divided the cost of scheduling between code
 >> inside and outside interrupt context likely to affect performance?
@@ -193,7 +200,13 @@ could be minimized.
 >> time to work on this part of the project, how might you choose to
 >> refine or improve your design?
 
-Todo
+Advantage:
+- Use of macros allowed for readability and faster execution.
+- Having a sorted list to begin with helps with scheduling.
+
+Disadvantage:
+- Constant checking and updating priorities, recent_cpu, and testing for preemption might have been an overkill. Perhaps have a more robust and cleaner way of doing this.
+
 
 >> C6: The assignment explains arithmetic for fixed-point math in
 >> detail, but it leaves it open to you to implement it.  Why did you
@@ -202,7 +215,7 @@ Todo
 >> type and/or a set of functions or macros to manipulate fixed-point
 >> numbers, why did you do so?  If not, why not?
 
-We created a set of macros for handling the fixed point arithmatic. Todo.
+Since fixed-point arithmetic are small pieces of code and are used in various parts of the program, we created a set of macros for handling the fixed point arithmetic. Macros are known to be preprocessed which allowed for faster execution. Also, readability played a big role.
 
 			   SURVEY QUESTIONS
 			   ================
@@ -221,14 +234,14 @@ This was a reasonable assignment.
 >> Did you find that working on a particular part of the assignment gave
 >> you greater insight into some aspect of OS design?
 
-Yes, the discussion in class about user expecation fo responsiveness as 
+Yes, the discussion in class about user expectation for responsiveness as 
 well as behavior within this assignment increased our understanding.
 
 >> Is there some particular fact or hint we should give students in
 >> future quarters to help them solve the problems?  Conversely, did you
 >> find any of our guidance to be misleading?
 
-Soling the alarm in class was definitely helpful, but probably do-able
+Solving the alarm in class was definitely helpful, but probably do-able
 on our own outside of class.
 
 >> Do you have any suggestions for the TAs to more effectively assist

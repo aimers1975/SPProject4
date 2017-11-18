@@ -353,8 +353,6 @@ thread_set_priority (int new_priority)
   struct thread *t = thread_current();
   int old_priority = t->priority;
 
-  /* update base priority */
-  t->base_priority = new_priority;
   /* update priority and test preemption if new priority
      is smaller */
   if (new_priority < old_priority)
@@ -582,7 +580,6 @@ init_thread (struct thread *t, const char *name, int priority)
   strlcpy (t->name, name, sizeof t->name);
   t->stack = (uint8_t *) t + PGSIZE;
   t->priority = priority;
-  t->base_priority = priority;
   t->magic = THREAD_MAGIC;
   t->nice_val = 0;
   t->recent_cpu = FP_CONST(0);
