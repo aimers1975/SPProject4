@@ -1,4 +1,4 @@
-			| 	S 140        |
+﻿			| 	S 140        |
 			| PROJECT 1: THREADS |
 			|   DESIGN DOCUMENT  |
 			+--------------------+
@@ -168,8 +168,8 @@ load_avg - Used in recent_cpu calculation.  Average number of threads ready to r
 timer  recent_cpu    	     priority		thread
 ticks   A   B   C  	 A  	  B     C   	to run
 -----  --  --  --  	--  	  --     --   	------
- 0	0   0   0   	63.00  	61.00  59.00     A
- 4	4   0   0	62.00   61.00  59.00     A
+ 0	  0   0   0   	63.00   61.00  59.00     A
+ 4	  4   0   0	      62.00   61.00  59.00     A
  8      8   0   0       61.00   61.00  59.00     A 
 12     12   0   0       60.00   61.00  59.00     B  
 16     12   4   0       60.00   60.00  59.00     B
